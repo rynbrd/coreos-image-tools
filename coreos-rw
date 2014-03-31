@@ -1,0 +1,99 @@
+#!/bin/bash
+# Enable/Disable R/W on CoreOS root partitions.
+
+err() {
+	echo "$@" >&2
+}
+
+die() {
+	err "error:" "$@"
+	exit 1
+}
+
+usage() {
+	test -n "$1" && err "error:" "$@"
+	err "usage: $0 COMMAND PARTITION"
+	err "Enable/Disable write on CoreOS root partitions."
+	err ""
+	err "Valid commands:"
+	err "    enable      Enable R/W on a partition."
+	err "    disable     Disable R/W on a partition."
+	err "    offset      Print the R/W byte offset for a partition."
+	err "    get         Read the R/W byte for the partition to stdout."
+	err "    set         Write the R/W byte for the partition from stdin"
+	exit 1
+}
+
+fstype() {
+	# usage: fstype PARTDEV
+	# Print the filessytem type of a partition.
+	blkid "$1" | grep ' TYPE=' | sed -r -e 's/.* TYPE="//g' -e 's/".*//g'
+}
+
+is_ext() {
+	# uasge: is_ext2 PARTDEV
+	# Check if a partition is ext[2-4].
+	fstype "$1" | egrep -q '^ext[2-4]$'
+}
+
+rw_offset() {
+	# usage: rw_offset PARTDEV
+	# Print the offset of the R/W byte.
+	test -b "$1" || die "device '$1' is not block special"
+	is_ext "$1" || die "device '$1' does not contain an ext[2-4] partition"
+	echo $((0x464 + 3))
+}
+
+rw_get() {
+	# usage: rw_get PARTDEV
+	# Print the R/W byte on the partition to stdout.
+	dd if="$1" skip="$(rw_offset "$1")" count=1 bs=1
+}
+
+rw_set() {
+	# usage: rw_set PARTDEV
+	# Set the R/W byte on the partition from stdin.
+	cat | dd of="$1" seek="$(rw_offset "$1")" conv=notrunc count=1 bs=1
+}
+
+rw_enable() {
+	# usage: rw_enable PARTDEV
+	# Enable R/W on a partition.
+	printf '\000' | rw_set "$1"
+}
+
+rw_disable() {
+	# usage: rw_disable PARTDEV
+	# Disable R/W on a partition.
+	printf '\377' | rw_set "$1"
+}
+
+test "$(whoami)" == "root" || die "this tool must be run as root"
+which dd &> /dev/null || die "dd not found in PATH"
+which blkid &> /dev/null || die "blkid not found in PATH"
+test -n "$1" || usage "missing partition argument"
+test -z "$3" || usage "too many arguments"
+
+cmd="$1"
+part="$2"
+
+case "$cmd" in
+enable)
+	rw_enable "$part"
+	;;
+disable)
+	rw_disable "$part"
+	;;
+offset)
+	rw_offset "$part"
+	;;
+get)
+	rw_get "$part"
+	;;
+set)
+	rw_set "$part"
+	;;
+*)
+	usage "unknown command: '$cmd'"
+	;;
+esac
