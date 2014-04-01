@@ -14,12 +14,12 @@ die() {
 
 usage() {
 	test -n "$1" && err "error:" "$@"
-	err "usage: $0 IMAGE ACTION [OPTIONS]"
+	err "usage: $0 IMAGE COMMAND [OPTIONS]"
 	err "Mount/Unmount CoreOS partitions."
 	err ""
-	err "Valid Commands:"
-	err "    mount [LABEL] [MNT]     Mount the image partition LABEL at MNT."
-	err "    umount [MNT]            Unmount the image mounted at MNT."
+	err "Valid commands:"
+	err "    mount IMAGE LABEL MNT   Mount the image partition LABEL at MNT."
+	err "    umount IMAGE LABEL      Unmount the image mounted at MNT."
 	exit 1
 }
 
@@ -73,8 +73,8 @@ image_mount() {
 	local label="$2"
 	local mnt="$3"
 
-	# prepare mnt directory
-	mkdir -p "$mnt" || die "failed to create mount point"
+	# check mnt directory
+	test -d "$mnt" || die "mount point does not exist"
 
 	# attach loop device
 	local lo="$(lo_find "$image")"
@@ -145,9 +145,7 @@ image_umount() {
 			die "failed to make '$part' writable"
 	fi
 
-	# if no other partitions on image mounted:
-	#   remove loop partition devices
-	#   detach loop device
+	# clean up loop devices
 	local prefix="$(lo_part_prefix "$lo")"
 	if ! mount | egrep -q "^${prefix}[0-9]+ "; then
 		kpartx -d "$lo"
@@ -155,33 +153,24 @@ image_umount() {
 	fi
 }
 
-
+test "$(whoami)" == "root" || die "this tool must be run as root"
 which blkid &> /dev/null || die "blkid not found in PATH"
 which kpartx &> /dev/null || die "kpartx not found in PATH"
 which losetup &> /dev/null || die "losetup not found in PATH"
+which mount &> /dev/null || die "mount not found in PATH"
+test $# -ge 1 || usage "invalid arguments"
+cmd="$1"; shift
 
-image_umount "$@"
-exit
-
-
-gpt_print() {
-	# usage: gpt_print DEVICE
-	# Print the GPT partition table. Columns are:
-	#   Number, Start Sector, End Sector, Size, Code, Label
-	echo -ne 'p\nq\n' | gdisk "$1" | egrep '^[ ]+[0-9]'
-}
-
-gpt_find_label() {
-	# usage: gpt_find_label DEVICE LABEL
-	# Find a GPT partition by its label.
-	local n=$(gpt_print "$1" | egrep " ${2}$" | awk '{print $1}')
-	test -n "$n" || return 1
-}
-
-is_dir_empty() {
-	# usage: is_dir_empty DIR
-	# Check if a directory is empty.
-	test $(find "$1" -maxdepth 0 -empty | wc -l) -eq 0
-}
-
-
+case "$cmd" in
+mount)
+	test $# -eq 3 || usage "invalid arguments"
+	image_mount "$@"
+	;;
+umount)
+	test $# -eq 2 || usage "invalid arguments"
+	image_umount "$@"
+	;;
+*)
+	usage "unknown command: '$cmd'"
+	;;
+esac
