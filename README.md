@@ -34,6 +34,16 @@ To disable write mode:
 
     $ coreos-rw disable /dev/mapper/loop0p3
 
+Requirements
+------------
+The following system utilities need to be installed for these tools to work:
+
+- blkid
+- dd
+- kpartx
+- losetup
+- mount
+
 License
 -------
 This software project is licensed under the BSD-derived license and is
