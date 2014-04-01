@@ -71,11 +71,10 @@ rw_disable() {
 test "$(whoami)" == "root" || die "this tool must be run as root"
 which dd &> /dev/null || die "dd not found in PATH"
 which blkid &> /dev/null || die "blkid not found in PATH"
-test -n "$1" || usage "missing partition argument"
-test -z "$3" || usage "too many arguments"
-
+test $# -eq 2 || usage "invalid arguments"
 cmd="$1"
 part="$2"
+shift 2
 
 case "$cmd" in
 enable)
