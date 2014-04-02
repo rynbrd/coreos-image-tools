@@ -47,13 +47,13 @@ rw_offset() {
 rw_get() {
 	# usage: rw_get PARTDEV
 	# Print the R/W byte on the partition to stdout.
-	dd if="$1" skip="$(rw_offset "$1")" count=1 bs=1
+	dd if="$1" skip="$(rw_offset "$1")" count=1 bs=1 status=none
 }
 
 rw_set() {
 	# usage: rw_set PARTDEV
 	# Set the R/W byte on the partition from stdin.
-	cat | dd of="$1" seek="$(rw_offset "$1")" conv=notrunc count=1 bs=1
+	cat | dd of="$1" seek="$(rw_offset "$1")" conv=notrunc count=1 bs=1 status=none
 }
 
 rw_enable() {
