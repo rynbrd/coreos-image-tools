@@ -27,45 +27,60 @@ For installing units:
 
 coreos-mount
 ------------
-Mount/Unmount partitions in an image. To mount the root partition at
-/mnt/coreos:
+Mount or unmount partitions in an image.
 
-    $ coreos-mount mount coreos.bin ROOT-A /mnt/coreos
+To mount a partition on an image:
 
-To unmount the partition:
+    $ coreos-mount mount IMAGE LABEL MNT
 
-	$ coreos-mount umount coreos.bin ROOT-A
+  - The IMAGE is a GPT partitioned disk image.
+  - The partition with LABEL will be mounted.
+  - The mount point is MNT and must already exist.
+  - Read-only root partitions are made writable.
+
+To unmount a partition:
+
+	$ coreos-mount umount IMAGE LABEL
+
+  - Searches for the mounted image partition and unmounts it.
+  - Detaches loop devices used during the process.
+  - Does not remove the mount point.
 
 Common labels are:
 
-- EFI-SYSTEM
-- ROOT-A
-- ROOT-B
-- OEM
-- STATE
+  - EFI-SYSTEM
+  - ROOT-A
+  - ROOT-B
+  - OEM
+  - STATE
 
 See the CoreOS docs for additional partition details.
 
 coreos-rw
 ---------
-Enable/Disable write mode on a CoreOS root partition. To enable write mode on
-the image attached to loop0:
+Enable or disable write mode on a CoreOS root partition.
 
-    $ coreos-rw enable /dev/mapper/loop0p3
+To enable write mode:
+
+    $ coreos-rw enable PARTITION
 
 To disable write mode:
 
-    $ coreos-rw disable /dev/mapper/loop0p3
+    $ coreos-rw disable PARTITION
+
+To view the current byte value:
+
+    $ coreos-rw get PARTITION | hexdump -b
 
 Requirements
 ------------
 The following system utilities need to be installed for these tools to work:
 
-- blkid
-- dd
-- kpartx
-- losetup
-- mount
+  - blkid
+  - dd
+  - kpartx
+  - losetup
+  - mount
 
 License
 -------
