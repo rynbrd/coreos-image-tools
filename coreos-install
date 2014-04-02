@@ -1,0 +1,105 @@
+#!/bin/bash
+# Install files into a CoreOS image.
+
+TOOLS="$(cd "$(dirname "$0")"; pwd)"
+UNITS="usr/lib64/systemd/system"
+STARTUP="coreos-startup.target"
+LABEL="ROOT-A"
+IMAGE=
+MNT=
+
+err() {
+	echo "$@" >&2
+}
+
+die() {
+	err "error:" "$@"
+	exit 1
+}
+
+usage() {
+	test -n "$1" && err "error:" "$@"
+	err "usage: $0 COMMAND [OPTIONS]"
+	err "Install files into a CoreOS root filesystem. ROOT may be a directory or a"
+	err "CoreOS binary image. If ROOT is an image it will be automatically mounted and"
+	err "unmounted."
+	err ""
+	err "Valid commands:"
+	err "    file ROOT SRC DEST  Copy a file into the image."
+	err "    unit ROOT SRC       Install a unit file in the image."
+	exit 1
+}
+
+image_mount() {
+	# usage: image_mount IMAGE
+	# Mount the image's root partition on a temporary directory.
+	test -n "$IMAGE" -o -n "$MNT" && return 0
+	if [ -f "$1" ]; then
+		IMAGE="$1"
+		MNT=$(mktemp -d)
+		if ! "$TOOLS/coreos-mount" mount "$IMAGE" "$LABEL" "$MNT"; then
+			rmdir "$MNT"
+			return 1
+		fi
+	else
+		IMAGE=""
+		MNT="$1"
+	fi
+}
+
+image_umount() {
+	# usage: image_umount
+	# Unmount the image and remove the temporary directory.
+	test -n "$IMAGE" || return 0
+	"$TOOLS/coreos-mount" umount "$IMAGE" "$LABEL"
+	rmdir "$MNT"
+	IMAGE=
+	MNT=
+}
+
+install_file() {
+	image_mount "$1" || die "failed to mount image"
+	local dest="$MNT/$3"
+	mkdir -p "$(dirname "$dest")" || dir "failed to create destination directory"
+	cp -pR "$2" "$dest" || die "failed to copy file"
+	chown -R root:root "$dest" || die "failed to set file ownership"
+}
+
+install_unit() {
+	test -f "$2" || die "source is not a regular file"
+	image_mount "$1" || die "failed to mount image"
+	local name=$(basename "$2")
+	local dest="$MNT/$UNITS/$name"
+
+	# install the unit file
+	cp "$2" "$dest" || die "failed to copy file"
+	chown -R root:root "$dest" || die "failed to set file ownership"
+	chmod 644 "$dest" || die "failed to set file permissions"
+
+	# add the unit file to coreos-startup
+	local startup="$MNT/$UNITS/$STARTUP"
+	if ! egrep -q "^Wants=${wants}$" "$startup"; then
+		sed -i "0,/^Wants=.*$/s//Wants=${name}\n&/" "$startup" || \
+			die "failed to add unit to startup"
+	fi
+}
+
+test "$(whoami)" == "root" || die "this tool must be run as root"
+test $# -gt 1 || usage "invalid arguments"
+cmd="$1"; shift
+
+trap image_umount EXIT
+
+case "$cmd" in
+file)
+	test $# -eq 3 || usage "invalid arguments"
+	install_file "$@"
+	;;
+unit)
+	test $# -eq 2 || usage "invalid arguments"
+	install_unit "$@"
+	;;
+*)
+	usage "unknown command: '$cmd'"
+	;;
+esac
