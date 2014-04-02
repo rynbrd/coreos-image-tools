@@ -2,6 +2,29 @@ CoreOS Image Tools
 ==================
 A set of tools for manipulating CoreOS images.
 
+coreos-install
+--------------
+Install components into the root partition if a CoreOS image. Currently files
+and systemd units are supported. The image is automatically mounted and
+unmounted. Alternatively a directory may be given where an image is already
+mounted.
+
+For installing files:
+
+    $ coreos-install file ROOT SRC DEST
+
+  - ROOT is the image or directory to install to.
+  - SRC may be a file or directory. It will be copied recursively.
+  - Ownership of DEST will be recursively changed to root:root.
+
+For installing units:
+
+    $ coreos-install unit ROOT SRC
+
+  - ROOT is the image or directory to install to.
+  - SRC must be a file. It will be copied to /usr/lib64/systemd/system.
+  - SRC will be added as a Want= to the top of the coreos-startup target.
+
 coreos-mount
 ------------
 Mount/Unmount partitions in an image. To mount the root partition at
