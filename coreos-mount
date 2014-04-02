@@ -14,7 +14,7 @@ die() {
 
 usage() {
 	test -n "$1" && err "error:" "$@"
-	err "usage: $0 IMAGE COMMAND [OPTIONS]"
+	err "usage: $0 COMMAND [OPTIONS]"
 	err "Mount/Unmount CoreOS partitions."
 	err ""
 	err "Valid commands:"
