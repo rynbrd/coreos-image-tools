@@ -23,28 +23,10 @@ usage() {
 	exit 1
 }
 
-abspath() {
-	# usage: abspath PATH
-	# Print the absolute path to PATH.
-	cd "$(dirname "$1")"
-	echo "$(pwd)/$(basename "$1")"
-}
-
 lo_find() {
 	# usage: lo_find IMAGE
 	# Print the loop device the image is attached to.
-	losetup -l | egrep " $(abspath "$1")$" | sed -e 's/ .*//g'
-}
-
-lo_available() {
-	# usage: lo_available
-	# Print the first available loop device.
-	local n=0
-	while losetup -l | egrep -q "^/dev/loop$n "; do
-		n=$((n + 1))
-	done
-	local loop="/dev/loop$n"
-	test -b "$loop" && echo "$loop" || return 1
+	losetup -j "$1" | sed -e 's/:.*//'
 }
 
 lo_part_prefix() {
@@ -79,9 +61,8 @@ image_mount() {
 	# attach loop device
 	local lo="$(lo_find "$image")"
 	if [ -z "$lo" ]; then
-		lo="$(lo_available)"
-		test -n "$lo" || die "no loop devices available"
-		losetup "$lo" "$image" || die "failed to attach '$lo' to '$image'"
+		losetup -f "$image" || die "failed to attach loop device to '$image'"
+		lo=$(lo_find "$image")
 	fi
 
 	# add loop partitions
