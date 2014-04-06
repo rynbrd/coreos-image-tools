@@ -25,8 +25,13 @@ usage() {
 	err "unmounted."
 	err ""
 	err "Valid commands:"
-	err "    file ROOT SRC DEST  Copy a file into the image."
-	err "    unit ROOT SRC       Install a unit file in the image."
+	err "  file [options] ROOT SRC DEST    Copy a file into the image."
+	err "  unit [options] ROOT SRC         Install a unit file in the image."
+	err ""
+	err "Valid options:"
+	err "  -m MODE       Permissions to set on the file. Defaults to 644."
+	err "  -o OWNER      Owner of the file. Defaults to root."
+	err "  -g GROUP      Group of the file. Defaults to root."
 	exit 1
 }
 
@@ -57,12 +62,17 @@ image_umount() {
 	MNT=
 }
 
+set_perms() {
+	chown -R "$OWNER:$GROUP" "$1" || die "failed to set file ownership"
+	chmod -R "$MODE" "$1" || die "failed to set file mode"
+}
+
 install_file() {
 	image_mount "$1" || die "failed to mount image"
 	local dest="$MNT/$3"
 	mkdir -p "$(dirname "$dest")" || dir "failed to create destination directory"
 	cp -pR "$2" "$dest" || die "failed to copy file"
-	chown -R root:root "$dest" || die "failed to set file ownership"
+	set_perms "$dest"
 }
 
 install_unit() {
@@ -73,8 +83,7 @@ install_unit() {
 
 	# install the unit file
 	cp "$2" "$dest" || die "failed to copy file"
-	chown -R root:root "$dest" || die "failed to set file ownership"
-	chmod 644 "$dest" || die "failed to set file permissions"
+	set_perms "$dest"
 
 	# add the unit file to coreos-startup
 	local startup="$MNT/$UNITS/$STARTUP"
@@ -84,22 +93,52 @@ install_unit() {
 	fi
 }
 
+parse_options() {
+	MODE=0644
+	OWNER=root
+	GROUP=root
+	COMMAND=$1; shift
+	while getopts "m:o:g:" OPTION; do
+		case "$OPTION" in
+		m)
+			MODE=$OPTARG
+			;;
+		o)
+			OWNER=$OPTARG
+			;;
+		g)
+			GROUP=$OPTARG
+			;;
+		*)
+			usage "invalid options"
+		esac
+	done
+	shift $(($OPTIND - 1))
+
+	case "$COMMAND" in
+	file)
+		test $# -eq 3 || usage "wrong number of arguments"
+		;;
+	unit)
+		test $# -eq 2 || usage "wrong number of arguments"
+		;;
+	*)
+		usage "invalid command '$COMMAND'"
+		;;
+	esac
+	ARGS=($@)
+}
+
+parse_options "$@"
 test "$(whoami)" == "root" || die "this tool must be run as root"
-test $# -gt 1 || usage "invalid arguments"
-cmd="$1"; shift
 
 trap image_umount EXIT
 
-case "$cmd" in
+case "$COMMAND" in
 file)
-	test $# -eq 3 || usage "invalid arguments"
-	install_file "$@"
+	install_file "${ARGS[@]}"
 	;;
 unit)
-	test $# -eq 2 || usage "invalid arguments"
-	install_unit "$@"
-	;;
-*)
-	usage "unknown command: '$cmd'"
+	install_unit "${ARGS[@]}"
 	;;
 esac
