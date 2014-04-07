@@ -42,9 +42,9 @@ blk_find_label() {
 		sed 's/:.*//g'
 }
 
-is_root() {
-	# usage: is_root LABEL
-	# Check if a partition is root.
+is_readonly() {
+	# usage: is_readonly LABEL
+	# Check if a partition is supposed to be read-only.
 	echo "$1" | egrep -q '^(USR)|(ROOT)-[AB]$'
 }
 
@@ -80,7 +80,7 @@ image_mount() {
 	fi
 
 	# make root writable
-	if is_root "$label"; then
+	if is_readonly "$label"; then
 		if ! "$TOOLS/coreos-rw" enable "$part"; then
 			kpartx -d "$lo"
 			losetup -d "$lo"
