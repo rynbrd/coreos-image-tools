@@ -25,13 +25,13 @@ For installing units:
   - SRC must be a file. It will be copied to /usr/lib64/systemd/system.
   - SRC will be added as a Want= to the top of the coreos-startup target.
 
-coreos-mount
+coreos-fs
 ------------
 Mount or unmount partitions in an image.
 
 To mount a partition on an image:
 
-    $ coreos-mount mount IMAGE LABEL MNT
+    $ coreos-fs mount IMAGE LABEL MNT
 
   - The IMAGE is a GPT partitioned disk image.
   - The partition with LABEL will be mounted.
@@ -40,7 +40,7 @@ To mount a partition on an image:
 
 To unmount a partition:
 
-	$ coreos-mount umount IMAGE LABEL
+	$ coreos-fs umount IMAGE LABEL
 
   - Searches for the mounted image partition and unmounts it.
   - Detaches loop devices used during the process.
