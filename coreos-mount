@@ -45,7 +45,7 @@ blk_find_label() {
 is_root() {
 	# usage: is_root LABEL
 	# Check if a partition is root.
-	echo "$1" | egrep -q '^ROOT-[AB]$'
+	echo "$1" | egrep -q '^(USR)|(ROOT)-[AB]$'
 }
 
 image_mount() {
