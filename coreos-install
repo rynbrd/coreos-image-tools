@@ -4,7 +4,7 @@
 TOOLS="$(cd "$(dirname "$0")"; pwd)"
 UNITS="usr/lib64/systemd/system"
 STARTUP="coreos-startup.target"
-LABEL="ROOT-A"
+LABEL="ROOT"
 IMAGE=
 MNT=
 
@@ -29,6 +29,7 @@ usage() {
 	err "  unit [options] ROOT SRC         Install a unit file in the image."
 	err ""
 	err "Valid options:"
+	err "  -l LABEL      The label of the filesystem to install into."
 	err "  -m MODE       Permissions to set on the file. Defaults to 644."
 	err "  -o OWNER      Owner of the file. Defaults to root."
 	err "  -g GROUP      Group of the file. Defaults to root."
@@ -98,8 +99,11 @@ parse_options() {
 	OWNER=root
 	GROUP=root
 	COMMAND=$1; shift
-	while getopts "m:o:g:" OPTION; do
+	while getopts "l:m:o:g:" OPTION; do
 		case "$OPTION" in
+		l)
+			LABEL=$OPTARG
+			;;
 		m)
 			MODE=$OPTARG
 			;;
