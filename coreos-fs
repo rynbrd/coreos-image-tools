@@ -14,13 +14,74 @@ die() {
 
 usage() {
 	test -n "$1" && err "error:" "$@"
-	err "usage: $0 COMMAND [OPTIONS]"
-	err "Mount/Unmount CoreOS partitions."
+	err "usage: $0 command [options]"
+	err "Mount and unmount CoreOS partitions."
 	err ""
 	err "Valid commands:"
-	err "    mount IMAGE LABEL MNT   Mount the image partition LABEL at MNT."
-	err "    umount IMAGE LABEL      Unmount the image mounted at MNT."
+	err "    mount [-l label] {device|image} dir     Mount a filesystem."
+	err "    umount [-l label] {device|image}        Unmount a filesystem."
 	exit 1
+}
+
+parse_options() {
+	COMMAND=$1; shift
+	LABEL=
+	IMAGE=
+	DIR=
+
+	while getopts "l:" OPTION; do
+		case "$OPTION" in
+		l)
+			LABEL="$OPTARG"
+			;;
+		esac
+	done
+	shift $(($OPTIND - 1))
+
+	case "$COMMAND" in
+	mount)
+		DEVICE=$1
+		DIR=$2
+		shift 2
+		test -e "$DEVICE" || die "invalid device or image: '$DEVICE'"
+		test -d "$DIR" || die "invalid mount point: '$DEVICE'"
+		;;
+	umount)
+		DEVICE=$1
+		test -e "$DEVICE" || die "invalid device or image: '$DEVICE'"
+		shift
+		;;
+	*)
+		die "invalid command"
+		;;
+	esac
+}
+
+device_is_image() {
+	# Check if a device is an image file.
+	test -f "$1"
+}
+
+device_is_root() {
+	# Check if a device is a root device.
+	echo "$1" | egrep -q '^/dev/(((s|x?v)d[a-z])|(loop[0-9]))$'
+}
+
+device_is_loop() {
+	# Check if a device is a loop device.
+	echo "$1" | egrep -q '^/dev/((loop[0-9])|(mapper/loop[0-9]p[0-9]+))$'
+}
+
+device_find() {
+	# usage: device_find DEVICE LABEL
+	# Find a partition by its label.
+	blkid -o device -t LABEL="$2" | egrep "$(lo_part_prefix "$1")"
+}
+
+device_label() {
+	# usage: device_label DEVICE
+	# Find a label by partition device.
+	blkid -o export "$1" | egrep '^LABEL=' | sed -e 's/^LABEL=//g'
 }
 
 lo_find() {
@@ -31,127 +92,147 @@ lo_find() {
 
 lo_part_prefix() {
 	# usage: lo_part_prefix DEVICE
-	# Print the aPrtition prefix for the loop device.
+	# Print the partition prefix for the loop device.
 	echo "$1" | sed -r -e 's|^/dev/loop([0-9]+)|/dev/mapper/loop\1p|'
 }
 
-blk_find_label() {
-	# usage: blk_find_label DEVICE LABEL
-	# Find a partition by its label.
-	blkid | egrep "^$(lo_part_prefix "$1")[0-9]+:.* LABEL=\"${2}\"" | \
-		sed 's/:.*//g'
+lo_resolve() {
+	if device_is_image "$DEVICE"; then
+		IMAGE=$DEVICE
+		DEVICE=$(lo_find "$IMAGE")
+		test -b "$DEVICE" || return 1
+	fi
+	return 0
 }
 
-is_readonly() {
-	# usage: is_readonly LABEL
+lo_create() {
+	# Create loop devices.
+	if device_is_image "$DEVICE"; then
+		IMAGE=$DEVICE
+		kpartx -a "$IMAGE" || return 1
+		DEVICE=$(lo_find "$IMAGE")
+	elif device_is_root "$DEVICE" && device_is_loop "$DEVICE"; then
+		kpartx -a "$DEVICE" || return 1
+	fi
+	return 0
+}
+
+lo_destroy() {
+	# Clean up loop devices.
+	if [ -n "$IMAGE" ]; then
+		local out=$(kpartx -d "$IMAGE" 2>&1)
+		if [ $? -eq 0 ]; then
+			echo $out
+			return $?
+		fi
+	fi
+}
+
+is_coreos_ro() {
+	# usage: is_coreos_ro LABEL
 	# Check if a partition is supposed to be read-only.
 	echo "$1" | egrep -q '^(USR)|(ROOT)-[AB]$'
 }
 
+is_coreos_root() {
+	# usage: is_coreos_root LABEL
+	# Check if a partition is a CoreOS root partition.
+	echo "$1" | egrep -q '^ROOT$'
+}
+
+image_mount_part() {
+	# usage: image_mount_part device dir [label]
+	# Mount a single partition.
+	local device=$1
+	local dir=$2
+	local label=$3
+	if [ -n "$label" ]; then
+		device="$(device_find "$DEVICE" "$label")"
+	else
+		label="$(device_label "$device")"
+	fi
+	test -b "$device" || die "device not found for label '$LABEL'"
+	if is_coreos_ro "$label"; then
+		"$TOOLS/coreos-rw" enable "$device" || die "failed to enable read/write on '$device'"
+	fi
+	if is_coreos_root "$label"; then
+		mount -o subvol=root "$device" "$dir" || die "failed to mount '$device' at '$dir'"
+	else
+		mount "$device" "$dir" || die "failed to mount '$device' at '$dir'"
+	fi
+}
+
+image_mount_tree() {
+	# usage: image_mount_tree device dir
+	# Mount an entire tree.
+	local device=$1
+	local dir=$2
+	test -d "$DIR" || die "mount point does not exist"
+	image_mount_part "$device" "$DIR" ROOT
+	image_mount_part "$device" "$DIR/usr" USR-A
+	image_mount_part "$device" "$DIR/usr/share/oem" OEM
+}
+
 image_mount() {
-	# usage: mount IMAGE LABEL MNT
-	# Mount a CoreOS image.
-	local image="$1"
-	local label="$2"
-	local mnt="$3"
-
-	# check mnt directory
-	test -d "$mnt" || die "mount point does not exist"
-
-	# attach loop device
-	local lo="$(lo_find "$image")"
-	if [ -z "$lo" ]; then
-		losetup -f "$image" || die "failed to attach loop device to '$image'"
-		lo=$(lo_find "$image")
+	lo_create
+	if device_is_root "$DEVICE"; then
+		image_mount_tree "$DEVICE" "$DIR"
+	else
+		image_mount_part "$DEVICE" "$DIR" "$LABEL"
 	fi
+}
 
-	# add loop partitions
-	if ! kpartx -a "$lo"; then
-		losetup -d "$lo"
-		die "failed to create loop partitions"
+image_umount_part() {
+	# usage: image_umount_part device [label]
+	local device=$1
+	local label=$2
+	if [ -n "$label" ]; then
+		device="$(device_find "$DEVICE" "$label")"
+	else
+		label="$(device_label "$device")"
 	fi
+	if ! [ -b "$device" ]; then
+		err "device not found for label '$label'"
+		return 1
+	fi
+	umount "$device" || return 1
+	if is_coreos_ro "$label"; then
+		"$TOOLS/coreos-rw" disable "$device" || return 1
+	fi
+}
 
-	# find labeled partition
-	local part="$(blk_find_label "$lo" "$label")"
-	if [ -z "$part" ]; then
-		kpartx -d "$lo"
-		losetup -d "$lo"
-		die "could not find partition '$label'"
-	fi
-
-	# make root writable
-	if is_readonly "$label"; then
-		if ! "$TOOLS/coreos-rw" enable "$part"; then
-			kpartx -d "$lo"
-			losetup -d "$lo"
-			die "failed to make '$part' writable"
-		fi
-	fi
-
-	# mount partition
-	if ! mount "$part" "$mnt"; then
-		kpartx -d "$lo"
-		losetup -d "$lo"
-		die "failed to mount '$part' at '$mnt'"
-	fi
+image_umount_tree() {
+	# usage: image_umount_tree device
+	image_umount_part "$device" OEM
+	image_umount_part "$device" USR-A
+	image_umount_part "$device" ROOT
 }
 
 image_umount() {
-	# usage: umount IMAGE LABEL
-	# Unmount a CoreOS image.
-	local image="$1"
-	local label="$2"
+	lo_resolve || die "image is not attached to a loop device"
 
-	# find loop device image is attached to
-	local lo="$(lo_find "$image")"
-	test -n "$lo" || die "image not attached to a loop device"
-
-	# find partition by label
-	local part="$(blk_find_label "$lo" "$label")"
-
-	# unmount partition
-	if [ -n "$part" ]; then
-		if mount | egrep -q "^${part} "; then
-			umount "$part" || die "failed to unmount '$part'"
-		else
-			err "partition not mounted"
-		fi
+	if device_is_root "$DEVICE"; then
+		image_umount_tree "$DEVICE"
 	else
-		test -n "$part" || err "could not find partition '$label'"
+		image_umount_part "$DEVICE" "$LABEL"
 	fi
 
-	# make root partition read-only
-	if is_root "$label"; then
-		"$TOOLS/coreos-rw" disable "$part" || \
-			die "failed to make '$part' writable"
-	fi
-
-	# clean up loop devices
-	local prefix="$(lo_part_prefix "$lo")"
-	if ! mount | egrep -q "^${prefix}[0-9]+ "; then
-		kpartx -d "$lo"
-		losetup -d "$lo"
-	fi
+	lo_destroy || die "failed to detach loop devices"
 }
+
+parse_options "$@"
 
 test "$(whoami)" == "root" || die "this tool must be run as root"
 which blkid &> /dev/null || die "blkid not found in PATH"
 which kpartx &> /dev/null || die "kpartx not found in PATH"
 which losetup &> /dev/null || die "losetup not found in PATH"
 which mount &> /dev/null || die "mount not found in PATH"
-test $# -ge 1 || usage "invalid arguments"
-cmd="$1"; shift
 
-case "$cmd" in
+case "$COMMAND" in
 mount)
-	test $# -eq 3 || usage "invalid arguments"
-	image_mount "$@"
+	image_mount
 	;;
 umount)
-	test $# -eq 2 || usage "invalid arguments"
-	image_umount "$@"
-	;;
-*)
-	usage "unknown command: '$cmd'"
+	image_umount
 	;;
 esac
