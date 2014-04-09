@@ -147,11 +147,13 @@ image_mount_part() {
 	local dir=$2
 	local label=$3
 	if [ -n "$label" ]; then
-		device="$(device_find "$DEVICE" "$label")"
+		local root=$device
+		device="$(device_find "$root" "$label")"
+		test -b "$device" || die "unable to find '$label' on '$root'"
 	else
 		label="$(device_label "$device")"
+		test -n "$label" || die "unabel to find label for '$device'"
 	fi
-	test -b "$device" || die "device not found for label '$LABEL'"
 	if is_coreos_ro "$label"; then
 		"$TOOLS/coreos-rw" enable "$device" || die "failed to enable read/write on '$device'"
 	fi
